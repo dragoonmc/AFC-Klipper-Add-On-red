@@ -970,6 +970,14 @@ class afcFunction:
                 ' First, select a unit to calibrate.'
                 ' *All values will be automatically updated in the appropriate config sections.')
         for index, (key, item) in enumerate(self.afc.units.items()):
+            # Only showing calibrations for units that have lanes
+            if len(self.afc.units.get(key).lanes) == 0:
+                continue
+
+            # Filtering out units that only have standalone lanes (toolchanger extruders without assist)
+            if all( lane.extruder_obj.no_lanes for lane in self.afc.units.get(key).lanes.values() ):
+                continue
+
             # Create a button for each unit
             button_label = "{}".format(key)
             button_command = 'UNIT_CALIBRATION UNIT={}'.format(key)
@@ -1060,6 +1068,12 @@ class afcFunction:
             self.afc.error.AFC_error("'{}' is not a valid lane".format(lanes), pause=False)
             return
 
+        if (lanes is not None
+            and lanes != 'all'
+            and self.afc.lanes.get(lanes).extruder_obj.no_lanes):
+            self.afc.error.AFC_error(f"{lanes} is a standalone lane, cannot calibrate", pause=False)
+            return
+
         if unit is not None and unit not in self.afc.units:
             self.afc.error.AFC_error("'{}' is not a valid unit".format(unit), pause=False)
             return
@@ -1087,6 +1101,10 @@ class afcFunction:
                 else:
                     # Calibrate all lanes if no specific lane is provided
                     for cur_lane in self.afc.lanes.values():
+                        if cur_lane.extruder_obj.no_lanes:
+                            self.logger.info(f"{cur_lane.name} is a standalone lane, skipping calibration".format())
+                            continue
+
                         if not cur_lane.load_state or not cur_lane.prep_state:
                             self.logger.info("{} not loaded skipping to next loaded lane".format(cur_lane.name))
                             continue
@@ -1114,6 +1132,10 @@ class afcFunction:
                     self.logger.info('{}'.format(CUR_UNIT.name))
                     # Calibrate all lanes if no specific lane is provided
                     for cur_lane in CUR_UNIT.lanes.values():
+                        if cur_lane.extruder_obj.no_lanes:
+                            self.logger.info(f"{cur_lane.name} is a standalone lane, skipping calibration".format())
+                            continue
+
                         if not cur_lane.load_state or  not cur_lane.prep_state:
                             self.logger.info("{} not loaded skipping to next loaded lane".format(cur_lane.name))
                             continue
