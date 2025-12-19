@@ -207,12 +207,13 @@ class afcUnit:
 
         direct_hubs = any( lane.is_direct_hub() for lane in self.afc.lanes.values())
         lanes_loaded = any( lane.load_state and not lane.is_direct_hub() for lane in self.afc.lanes.values())
+        any_lane_has_td1_ids = any( lane.td1_device_id for lane in self.afc.lanes.values())
 
         if not direct_hubs or lanes_loaded:
             buttons.append(("Calibrate afc_bowden_length", "UNIT_BOW_CALIBRATION UNIT={}".format(self.name), "secondary"))
 
         # Add button for TD-1 calibration if user has one connected and defined
-        if self.afc.td1_defined:
+        if self.afc.td1_defined and any_lane_has_td1_ids:
             buttons.append(("Calibrate TD-1 Length", "AFC_UNIT_TD_ONE_CALIBRATION UNIT={}".format(self.name), "primary"))
 
         # Button back to previous step
@@ -357,7 +358,8 @@ class afcUnit:
                 'Config option: td1_bowden_length').format(self.name)
 
         for lane in self.lanes.values():
-            if lane.load_state:
+            if (lane.td1_device_id
+                and lane.load_state):
                 # Create a button for each lane
                 button_label = "{}".format(lane)
                 button_command = "CALIBRATE_AFC TD1={} DISTANCE=50".format(lane)
@@ -439,13 +441,13 @@ class afcUnit:
         """
         return
 
-    def return_to_home(self):
+    def return_to_home(self, prep=False):
         """
         Function to home unit if unit has homing sensor
         """
         return
 
-    def check_runout(self):
+    def check_runout(self, cur_lane):
         """
         Function to check if runout logic should be triggered, override in specific unit
         """
@@ -477,7 +479,8 @@ class afcUnit:
     def calibrate_lane(self, cur_lane, tol):
         self._print_function_not_defined(self.calibrate_lane.__name__)
 
-    def get_td1_data(self, cur_lane, compare_time):
+    def get_td1_data(self, cur_lane: AFCLane, compare_time: datetime,
+                     ignore_time: bool=False) -> bool:
         """
         Queries moonrakers endpoint to get td1 data and check to see if data is valid and time
         in data is greater than passed in time as this is how determination is made that filament
@@ -487,6 +490,8 @@ class afcUnit:
                          assigned to the lane.
         :param compare_time: Time to compare returned data to, which helps verify that the data is valid and
                              filament has reached TD-1 device
+        :param ignore_time: Override to just capture TD-1 data anyways, useful when loading filament to toolhead
+                            and want to capture data once loaded.
 
         :return boolean: True once filament is detected in TD-1 device
         """
@@ -496,14 +501,12 @@ class afcUnit:
 
         if len(td1_data) > 0:
             self.logger.debug(f"Data: {td1_data}, Compare_time: {compare_time}")
-            data = list(td1_data.values())[0]
 
-            if cur_lane.td1_device_id is not None:
-                if cur_lane.td1_device_id in td1_data:
-                    data = td1_data[cur_lane.td1_device_id]
-                else:
-                    self.afc.error.AFC_error(f"TD-1 Device ID ({cur_lane.td1_device_id}) supplied, but ID not found.", pause=False)
-                    return False
+            if cur_lane.td1_device_id in td1_data:
+                data = td1_data[cur_lane.td1_device_id]
+            else:
+                self.afc.error.AFC_error(f"TD-1 Device ID ({cur_lane.td1_device_id}) supplied, but ID not found.", pause=False)
+                return False
 
             if data["scan_time"] is None:
                 return False
@@ -518,13 +521,14 @@ class afcUnit:
                 self.afc.logger.error("Error trying to format TD-1 scan time, check AFC.log for more information", f"{e}")
                 return False
 
-
             if scan_time > compare_time.astimezone():
                 valid_data = True
             elif ( compare_time.astimezone() - scan_time ) < t_delta:
                 valid_data = True
 
-            if valid_data and data['td'] is not None and data['color'] is not None:
+            if ( (valid_data or ignore_time)
+                 and data['td'] is not None
+                 and data['color'] is not None ):
                 cur_lane.td1_data = data
                 self.logger.info(f"{cur_lane.name} TD-1 data captured")
                 self.afc.save_vars()
