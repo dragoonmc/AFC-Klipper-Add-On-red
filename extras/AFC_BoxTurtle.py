@@ -62,39 +62,45 @@ class afcBoxTurtle(afcUnit):
 
         if not cur_lane.prep_state:
             if not cur_lane.load_state:
-                self.afc.function.afc_led(cur_lane.led_not_ready, cur_lane.led_index)
+                self.lane_not_ready(cur_lane)
                 msg += 'EMPTY READY FOR SPOOL'
             else:
-                self.afc.function.afc_led(cur_lane.led_fault, cur_lane.led_index)
+                self.lane_fault(cur_lane)
                 msg +="<span class=error--text> NOT READY</span>"
                 cur_lane.do_enable(False)
                 msg = '<span class=error--text>CHECK FILAMENT Prep: False - Load: True</span>'
                 succeeded = False
 
         else:
-            self.afc.function.afc_led(cur_lane.led_ready, cur_lane.led_index)
+            self.lane_loaded(cur_lane)
             msg +="<span class=success--text>LOCKED</span>"
             if not cur_lane.load_state:
                 msg +="<span class=error--text> NOT LOADED</span>"
-                self.afc.function.afc_led(cur_lane.led_not_ready, cur_lane.led_index)
+                self.lane_not_ready(cur_lane)
                 succeeded = False
             else:
                 cur_lane.status = AFCLaneState.LOADED
                 msg +="<span class=success--text> AND LOADED</span>"
-                self.afc.function.afc_led(cur_lane.led_spool_illum, cur_lane.led_spool_index)
+                self.lane_illuminate_spool(cur_lane)
 
                 if cur_lane.tool_loaded:
                     if cur_lane.get_toolhead_pre_sensor_state() == True or cur_lane.extruder_obj.tool_start == "buffer" or cur_lane.extruder_obj.tool_end_state:
                         if cur_lane.extruder_obj.lane_loaded == cur_lane.name:
                             cur_lane.sync_to_extruder()
-                            msg +="<span class=primary--text> in ToolHead</span>"
+                            on_shuttle = ""
+                            if (cur_lane.extruder_obj.tool_obj
+                                and cur_lane.extruder_obj.tc_unit_name):
+                                on_shuttle = " and toolhead on shuttle" if cur_lane.extruder_obj.on_shuttle() else ""
+                            msg += f"<span class=primary--text> in ToolHead{on_shuttle}</span>"
                             if cur_lane.extruder_obj.tool_start == "buffer":
                                 msg += "<span class=warning--text>\n Ram sensor enabled, confirm tool is loaded</span>"
 
                             if self.afc.current == cur_lane.name:
                                 self.afc.spool.set_active_spool(cur_lane.spool_id)
-                                self.afc.function.afc_led(cur_lane.led_tool_loaded, cur_lane.led_index)
+                                self.lane_tool_loaded(cur_lane)
                                 cur_lane.status = AFCLaneState.TOOLED
+                            else:
+                                self.lane_tool_loaded_idle(cur_lane)
 
                             cur_lane.enable_buffer()
                         else:
