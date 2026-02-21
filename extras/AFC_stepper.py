@@ -65,6 +65,8 @@ class AFCExtruderStepper(AFCLane):
         # Check for Klipper new motion queuing update
         self.motion_queuing = self.printer.load_object(config, "motion_queuing", None)
 
+        self.next_cmd_time = 0.
+
         ffi_main, ffi_lib = chelper.get_ffi()
         self.stepper_kinematics = ffi_main.gc(
             ffi_lib.cartesian_stepper_alloc(b'x'), ffi_lib.free)
@@ -196,6 +198,19 @@ class AFCExtruderStepper(AFCLane):
         else:
             # Old klipper and kalico enable function
             self.stepper_enable.motor_debug_enable(f"AFC_stepper {self.name}", enable)
+
+    def sync_print_time(self):
+        """
+        Helper function to get current print time that compares to previous synced time
+        If last print time is greater than current print time, calls a toolhead dwell
+        If print time is greater than last, self.new_cmd_time gets updated
+        """
+        toolhead = self.printer.lookup_object('toolhead')
+        print_time = toolhead.get_last_move_time()
+        if self.next_cmd_time > print_time:
+            toolhead.dwell(self.next_cmd_time - print_time)
+        else:
+            self.next_cmd_time = print_time
 
     def sync_to_extruder(self, update_current=True, extruder_name=None):
         """
@@ -454,7 +469,8 @@ class AFCExtruderStepper(AFCLane):
         buffer_trail_pin = self._get_section_value('AFC_buffer', buffer_name, 'trailing_pin')
 
         # Check to verify that hub is not a virtual sensor
-        if hub_pin.lower() != "virtual":
+        if (hub_pin
+            and hub_pin.lower() != "virtual"):
             self._add_endstop('hub', hub_pin, 'hub')
         if tool_start_pin != 'buffer':
             self._add_endstop('tool_start', tool_start_pin, 'tool_start')

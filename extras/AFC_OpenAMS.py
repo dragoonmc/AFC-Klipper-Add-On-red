@@ -292,7 +292,7 @@ class afcAMS(afcUnit):
         # first poll comes back.
         for lane in self.lanes.values():
             lane.prep_state = False
-            lane.load_state = False
+            lane._load_state = False
             lane.status = AFCLaneState.NONE
             lane.ams_share_prep_load = getattr(lane, "load", None) is None
 
@@ -920,7 +920,7 @@ class afcAMS(afcUnit):
             return
 
         if lane_val:
-            lane.load_state = False
+            lane._load_state = False
             try:
                 lane.prep_callback(eventtime, True)
             finally:

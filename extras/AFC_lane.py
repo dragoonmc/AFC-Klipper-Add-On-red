@@ -299,7 +299,8 @@ class AFCLane:
                                            self.cmd_SET_LANE_LOAD_options )
         self._get_steppers(config)
 
-        if getattr(self.unit_obj, "selector_stepper_obj", None):
+        if (hasattr(self, "unit_obj")
+            and getattr(self.unit_obj, "selector_stepper_obj", None)):
             # Register macro for units that have selectors
             self.function.register_mux_command(self.afc.show_macros, "AFC_SELECT_LANE",
                                                "LANE", self.name,
@@ -485,8 +486,6 @@ class AFCLane:
             self.buffer_obj.lanes[self.name] = self
             # Assigning buffer name just in case stepper is using buffer defined in units/extruder config
             self.buffer_name = self.buffer_obj.name
-
-        self.get_steppers()
 
         if self.led_fault            is None: self.led_fault            = self.unit_obj.led_fault
         if self.led_ready            is None: self.led_ready            = self.unit_obj.led_ready
@@ -956,18 +955,18 @@ class AFCLane:
                         self.logger.debug(f"Prep: direct load logic done-{self.name}-{self.hub}")
                         break
 
-                        self.unit_obj.prep_post_load(self)
+                    self.unit_obj.prep_post_load(self)
 
-                        self.do_enable(False)
-                        if (self.td1_device_id
-                            and self.load_state
-                            and self.prep_state):
-                            self.set_loaded()
-                            self._post_prep_user_macro()
-                            # Check if user wants to get TD-1 data when loading
-                            # TODO: When implementing multi-extruder this could still happen if a lane is loaded for a
-                            # different extruder/hub
-                            self._prep_capture_td1()
+                    self.do_enable(False)
+                    if (self.td1_device_id
+                        and self.load_state
+                        and self.prep_state):
+                        self.set_loaded()
+                        self._post_prep_user_macro()
+                        # Check if user wants to get TD-1 data when loading
+                        # TODO: When implementing multi-extruder this could still happen if a lane is loaded for a
+                        # different extruder/hub
+                        self._prep_capture_td1()
 
                     elif self.prep_state == True and self.load_state == True and not self.afc.function.is_printing():
                         message = 'Cannot load {} load sensor is triggered.'.format(self.name)
