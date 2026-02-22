@@ -176,9 +176,9 @@ class AFC_HTLF(afcBoxTurtle):
 
         while not self.home_state and not self.failed_to_home:
             if not self.afc.homing_enabled:
-                move_distance = -1
+                move_distance = 1
             self._move_selector_home(move_distance)
-            total_moved += 1
+            total_moved += move_distance
             if total_moved > (self.mm_move_per_rotation/360)*(self.MAX_ANGLE_MOVEMENT+self.cam_angle):
                 self.failed_to_home = True
                 self.afc.error.AFC_error("Failed to home {}".format(self.name), False)
