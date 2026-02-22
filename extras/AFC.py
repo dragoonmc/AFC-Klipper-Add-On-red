@@ -1388,12 +1388,13 @@ class afc:
                 if cur_lane.is_direct_hub():
                     home_endstop= cur_lane.get_toolhead_endstop()
                     _, _, warn = cur_lane.move_to(dist_to_hub, SpeedMode.LONG,
-                                    assist_active=AssistActive.DYNAMIC,
-                                    endstop=home_endstop, use_homing=self.homing_enabled)
+                                                  assist_active=AssistActive.DYNAMIC,
+                                                  endstop=home_endstop,
+                                                  use_homing=self.homing_enabled)
                 else:
                     cur_lane.unit_obj.move_to_hub(cur_lane, dist_to_hub, MoveDirection.POS,
-                                                self.homing_enabled,
-                                                speedMode=SpeedMode.LONG)
+                                                  self.homing_enabled,
+                                                  speed_mode=SpeedMode.LONG)
                 self.afcDeltaTime.log_with_time(
                     f"Loaded to {'hub' if not cur_lane.is_direct_hub() else 'toolhead'}"
                 )
@@ -1404,7 +1405,7 @@ class afc:
             # Ensure filament moves past the hub.
             while not cur_hub.state and not cur_lane.is_direct_hub():
                 cur_lane.unit_obj.move_to_hub(cur_lane, cur_hub.move_dis,
-                                            MoveDirection.POS, self.homing_enabled)
+                                              MoveDirection.POS, self.homing_enabled)
                 hub_attempts += 1
                 if hub_attempts > 20:
                     message = 'filament did not trigger hub sensor, CHECK FILAMENT PATH\n||=====||==>--||-----||\nTRG   LOAD   HUB   TOOL.'
@@ -1419,10 +1420,10 @@ class afc:
             # Move filament towards the toolhead.
             if not cur_lane.is_direct_hub():
                 _, _, warn = cur_lane.move_to(cur_hub.afc_bowden_length,
-                                SpeedMode.LONG,
-                                assist_active=AssistActive.YES,
-                                endstop=cur_lane.get_toolhead_endstop(),
-                                use_homing=self.homing_enabled and self.home_to_tool)
+                                              SpeedMode.LONG,
+                                              assist_active=AssistActive.YES,
+                                              endstop=cur_lane.get_toolhead_endstop(),
+                                              use_homing=self.homing_enabled and self.home_to_tool)
 
             # Ensure filament reaches the toolhead.
             tool_attempts = 0
@@ -1440,8 +1441,8 @@ class afc:
                         cur_lane.move_to(100 * MoveDirection.NEG, SpeedMode.SHORT,
                                         use_homing=False)
                     _, dist, warn = cur_lane.move_to(move_distance, SpeedMode.SHORT,
-                                                    endstop=cur_lane.get_toolhead_endstop(),
-                                                    use_homing=self.homing_enabled and self.home_to_tool)
+                                                     endstop=cur_lane.get_toolhead_endstop(),
+                                                     use_homing=self.homing_enabled and self.home_to_tool)
                     if (dist > 50.0
                         and self.homing_enabled):
                         warn = False
@@ -1818,13 +1819,13 @@ class afc:
             cur_lane.unsync_to_extruder()
             if not cur_lane.is_direct_hub():
                 cur_lane.unit_obj.move_to_hub(cur_lane, cur_hub.afc_unload_bowden_length,
-                                            MoveDirection.NEG, self.homing_enabled,
-                                            speedMode=SpeedMode.LONG)
+                                              MoveDirection.NEG, self.homing_enabled,
+                                              speed_mode=SpeedMode.LONG)
             else:
                 cur_lane.move_to(cur_lane.dist_hub * -1, SpeedMode.LONG,
-                                assist_active = AssistActive.DYNAMIC,
-                                endstop=cur_lane.load_es,
-                                use_homing=self.homing_enabled)
+                                 assist_active = AssistActive.DYNAMIC,
+                                 endstop=cur_lane.load_es,
+                                 use_homing=self.homing_enabled)
 
             self.afcDeltaTime.log_with_time("Long retract done")
 
@@ -1841,7 +1842,7 @@ class afc:
                     max_attempts = 2
                     move_dist = cur_hub.afc_unload_bowden_length
                 cur_lane.unit_obj.move_to_hub(cur_lane, move_dist,
-                                            MoveDirection.NEG, self.homing_enabled)
+                                              MoveDirection.NEG, self.homing_enabled)
 
                 num_tries += 1
                 if num_tries >= max_attempts:
@@ -1864,7 +1865,7 @@ class afc:
             #Move to make sure hub path is clear based on the move_clear_dis var
             if not cur_lane.is_direct_hub():
                 cur_lane.move_advanced(cur_hub.hub_clear_move_dis * -1, SpeedMode.SHORT,
-                                    assist_active=AssistActive.YES)
+                                       assist_active=AssistActive.YES)
 
                 # Cut filament at the hub, if configured.
                 if cur_hub.cut:
@@ -1876,7 +1877,7 @@ class afc:
                     # Confirm the hub is clear after the cut.
                     while cur_hub.state:
                         cur_lane.move_advanced(cur_lane.short_move_dis * -1, SpeedMode.SHORT,
-                                            assist_active=AssistActive.YES)
+                                               assist_active=AssistActive.YES)
                         num_tries += 1
                         # TODO: Figure out max number of tries
                         if num_tries > (cur_hub.afc_unload_bowden_length / cur_lane.short_move_dis):
@@ -1894,7 +1895,7 @@ class afc:
             if cur_lane.is_direct_hub():
                 while cur_lane.load_state:
                     cur_lane.move_advanced(cur_lane.short_move_dis * -1, SpeedMode.SHORT,
-                                        assist_active=AssistActive.YES)
+                                           assist_active=AssistActive.YES)
                 cur_lane.move_advanced(cur_lane.short_move_dis * -5, SpeedMode.SHORT)
 
             if self.post_unload_macro is not None:

@@ -126,7 +126,7 @@ class AFC_vivid(afcBoxTurtle):
                          goes into the PTFE
         :return tuple: Returns tuple of homed(True/False) and distance moved
         """
-        if lane.selector_endstop:
+        if lane.selector_endstop_name:
             sel_dir = MoveDirection.NEG if sel_prep else MoveDirection.POS
             selector_state = self._get_lane_selector_state(lane)
             selector_enabled= self._get_selector_enabled()
@@ -233,7 +233,7 @@ class AFC_vivid(afcBoxTurtle):
         self.drive_stepper_obj.do_enable(False)
 
     def move_to_hub(self, lane: AFCLane, dist: float, dir:MoveDirection, use_homing=True,
-                    speedMode=SpeedMode.HUB, assist_active=AssistActive.DYNAMIC
+                    speed_mode=SpeedMode.HUB, assist_active=AssistActive.DYNAMIC
                     ) -> tuple[bool, float|int, bool]:
         """
         Helper method for calling lanes move_to method and passing in lanes load endstop as trigger
@@ -250,7 +250,7 @@ class AFC_vivid(afcBoxTurtle):
                 movement moved is not within 300mm of total distance. When homing is
                 disabled, always returns True, 0, False.
         """
-        homed, distance, warn = lane.move_to(dist * dir, speedMode, assist_active=assist_active,
+        homed, distance, warn = lane.move_to(dist * dir, speed_mode, assist_active=assist_active,
                                        endstop=lane.load_es, use_homing=use_homing)
         return homed, distance, warn
 

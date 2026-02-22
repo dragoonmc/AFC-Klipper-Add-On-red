@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from extras.AFC_buffer import AFCTrigger
     from extras.AFC_stepper import AFCExtruderStepper
     from extras.AFC_unit import afcUnit
+    from pins import PrinterPins
+    from query_endstops import QueryEndstops
 
 try: from extras.AFC_utils import ERROR_STR, add_filament_switch
 except: raise error("Error when trying to import AFC_utils.ERROR_STR, add_filament_switch\n{trace}".format(trace=traceback.format_exc()))
@@ -75,6 +77,8 @@ class AFCHomingPoints(str):
     TOOL_START  = "tool_start"
     BUFFER      = "buffer"
     BUFFER_TRAIL= "buffer_trailing"
+    SELECTOR    = "selector"
+    PREP        = "prep"
 
 class AFCLane:
     UPDATE_WEIGHT_DELAY = 10.0
@@ -95,6 +99,7 @@ class AFCLane:
         self.hub_obj: Optional[afc_hub|None] = None
         self.buffer_obj: Optional[AFCTrigger|None] = None
         self.extruder_obj: AFCExtruder
+        self.endstops = {}
 
         #stored status variables
         self.fullname: str      = config.get_name()
@@ -224,8 +229,6 @@ class AFCLane:
         # Defaulting to false so that extruder motors to not move until PREP has been called
         self._afc_prep_done = False
 
-        self.prep_endstop_name = None
-        self.prep_endstop = None
         if self.prep is not None:
             show_sensor = True
             if not self.enable_sensors_in_gui or (self.sensor_to_show is not None and 'prep' not in self.sensor_to_show):
@@ -235,19 +238,9 @@ class AFCLane:
                                                                             debounce_delay=self.debounce_delay )
             self.prep_debounce_button.button_action = self.handle_prep_runout
             self.prep_debounce_button.debounce_delay = 0 # Delay will be set once klipper is ready
-            ppins.allow_multi_use_pin(self.prep.strip("!^"))
-            ppins.parse_pin(self.prep, True, True)
-            self.prep_endstop = ppins.setup_pin('endstop', self.prep)
-            self.prep_endstop_name = f"{self.name}_prep"
-            try:
-                query_endstops.register_endstop(self.prep_endstop,
-                                                self.prep_endstop_name)
-            except Exception as e:
-                err_msg = f"Error trying to register prep endstop for {self.name}.\n Error:{e}"
-                raise error(err_msg)
+            self._set_homing_endstop(query_endstops, ppins,
+                                     self.prep, AFCHomingPoints.PREP)
 
-        self.load_endstop_name = None
-        self.load_endstop = None
         if self.load is not None:
             show_sensor = True
             if not self.enable_sensors_in_gui or (self.sensor_to_show is not None and 'load' not in self.sensor_to_show):
@@ -257,36 +250,34 @@ class AFCLane:
                                                                             debounce_delay=self.debounce_delay )
             self.load_debounce_button.button_action = self.handle_load_runout
             self.load_debounce_button.debounce_delay = 0 # Delay will be set once klipper is ready
-            ppins.allow_multi_use_pin(self.load.strip("!^"))
-            ppins.parse_pin(self.load, True, True)
-            self.load_endstop = ppins.setup_pin('endstop', self.load)
-            self.load_endstop_name = f"{self.name}_load"
-            try:
-                query_endstops.register_endstop(self.load_endstop,
-                                                self.load_endstop_name)
-            except Exception as e:
-                err_msg = f"Error trying to register load endstop for {self.name}.\n Error:{e}"
-                raise error(err_msg)
+            self._set_homing_endstop(query_endstops, ppins,
+                                     self.load, AFCHomingPoints.LOAD)
 
-        self.selector_endstop_name = None
-        self.selector_endstop = None
         if self.selector is not None:
             show_sensor = True
             if not self.enable_sensors_in_gui or (self.sensor_to_show is not None and 'selector' not in self.sensor_to_show):
                 show_sensor = False
             self.fila_selector = add_filament_switch(f"{self.name}_selector", self.selector,
                                                      self.printer, show_sensor)
+            self._set_homing_endstop(query_endstops, ppins,
+                                     self.selector, AFCHomingPoints.SELECTOR)
+        if (self.hub
+            and "direct" not in self.hub):
+            self._get_hub_object()
+            self._set_homing_endstop(query_endstops, ppins,
+                                     self.hub_obj.switch_pin, AFCHomingPoints.HUB)
+        if self.buffer_name:
+            self._get_buffer_object()
+            self._set_homing_endstop(query_endstops, ppins,
+                                     self.buffer_obj.advance_pin, AFCHomingPoints.BUFFER)
 
-            ppins.allow_multi_use_pin(self.selector.strip("!^"))
-            ppins.parse_pin(self.selector, True, True)
-            self.selector_endstop = ppins.setup_pin('endstop', self.selector)
-            self.selector_endstop_name = f"{self.name}_selector"
-            try:
-                query_endstops.register_endstop(self.selector_endstop,
-                                                self.selector_endstop_name)
-            except Exception as e:
-                err_msg = f"Error trying to register selector endstop for {self.name}.\n Error:{e}"
-                raise error(err_msg)
+        if (self.extruder_name
+            and "extruder" not in self.name): # Protects against standalone lanes
+            self._get_extruder_object()
+            pin = self.extruder_obj.tool_start
+            if "buffer" not in pin:
+                self._set_homing_endstop(query_endstops, ppins,
+                                         pin, AFCHomingPoints.TOOL)
 
         self.connect_done = False
         self.prep_active = False
@@ -297,6 +288,7 @@ class AFCLane:
         self.function.register_mux_command(self.show_macros, 'SET_LANE_LOADED', 'LANE', self.name,
                                            self.cmd_SET_LANE_LOADED, self.cmd_SET_LANE_LOADED_help,
                                            self.cmd_SET_LANE_LOAD_options )
+
         self._get_steppers(config)
 
         if (hasattr(self, "unit_obj")
@@ -330,6 +322,45 @@ class AFCLane:
             return self.load_endstop_name
         else:
             return AFCHomingPoints.LOAD
+
+    def _lookup_endstop(self, name: str) -> Optional[str]:
+        """
+        Helper methof for looking up endstops from dictionary
+
+        :param name: Endstop name to lookup
+        :return: Returns name if its found, if name is not found returns name passed in
+        """
+        endstop_name = name
+        if name in self.endstops:
+            endstop_name = self.endstops[name]["endstop_name"]
+        return endstop_name
+
+    """
+    The following properties lookup specific endstop name
+    """
+    @property
+    def prep_endstop_name(self) -> str:
+        return self._lookup_endstop(AFCHomingPoints.PREP)
+
+    @property
+    def load_endstop_name(self) -> str:
+        return self._lookup_endstop(AFCHomingPoints.LOAD)
+
+    @property
+    def selector_endstop_name(self) -> str:
+        return self._lookup_endstop(AFCHomingPoints.SELECTOR)
+
+    @property
+    def hub_endstop_name(self) -> str:
+        return self._lookup_endstop(AFCHomingPoints.HUB)
+
+    @property
+    def buffer_endstop_name(self) -> str:
+        return self._lookup_endstop(AFCHomingPoints.BUFFER)
+
+    @property
+    def tool_endstop_name(self) -> str:
+        return self._lookup_endstop(AFCHomingPoints.TOOL)
 
     @material.setter
     def material(self, value):
@@ -367,6 +398,68 @@ class AFCLane:
             self.prep_debounce_button.debounce_delay = self.debounce_delay
         if hasattr(self, "load_debounce_button"):
             self.load_debounce_button.debounce_delay = self.debounce_delay
+
+    def _get_hub_object(self):
+        """
+        Helper method to lookup lane/stepper hub object and assign object to hub_obj variable
+
+        raises error if hub is not found
+        """
+        try:
+            self.hub_obj = self.printer.load_object(self._config, "AFC_hub {}".format(self.hub))
+        except:
+            error_string = 'Error: No config found for hub: {hub} in [{stepper}]. Please make sure [AFC_hub {hub}] section exists in your config'.format(
+            hub=self.hub, stepper=self.fullname )
+            raise error(error_string)
+
+    def _get_buffer_object(self):
+        """
+        Helper method to lookup lane/stepper buffer object and assigns object to buffer_obj variable
+
+        raises error if buffer is not found
+        """
+        try:
+            self.buffer_obj = self.printer.load_object(self._config, "AFC_buffer {}".format(self.buffer_name))
+        except:
+            error_string = 'Error: No config found for buffer: {buffer} in [{stepper}]. Please make sure [AFC_buffer {buffer}] section exists in your config'.format(
+                buffer=self.buffer_name, stepper=self.fullname )
+            raise error(error_string)
+
+    def _get_extruder_object(self):
+        """
+        Helper method to lookup lane/stepper extruder object and assigns object to extruder_obj variable
+
+        raises error if extruder is not found
+        """
+        try:
+            self.extruder_obj = self.printer.load_object(self._config, 'AFC_extruder {}'.format(self.extruder_name))
+        except:
+            error_string = 'Error: No config found for extruder: {extruder} in [{stepper}]. Please make sure [AFC_extruder {extruder}] section exists in your config'.format(
+                extruder=self.extruder_name, stepper=self.fullname )
+            raise error(error_string)
+
+    def _set_homing_endstop(self, query_endstops: QueryEndstops, ppins: PrinterPins,
+                            pin: str, name: str):
+        """
+        Helper method for setting up pin as endstop for homing to and add to endstops dictionary.
+
+        :param query_endstops: Klippers query endstops object
+        :param ppins: Klipper pins object
+        :param pin: MCU pin to setup as endstop
+        :param name: Name of endstop to register
+        """
+        ppins.allow_multi_use_pin(pin.strip("!^"))
+        ppins.parse_pin(pin, True, True)
+        endstop = ppins.setup_pin('endstop', pin)
+        endstop_name = f"{self.name}_{name}"
+        try:
+            query_endstops.register_endstop(endstop,
+                                            endstop_name)
+        except Exception as e:
+            err_msg = f"Error trying to register {name} endstop for {self.name}.\n Error:{e}"
+            raise error(err_msg)
+
+        self.endstops.update({name: {"endstop": endstop, "endstop_name": endstop_name}})
 
     def handle_moonraker_connect(self):
         """
@@ -407,16 +500,12 @@ class AFCLane:
             self.afc.lanes[self.name] = self
 
 
-        self.hub_obj = self.unit_obj.hub_obj
+        if self.hub is None:
+            self.hub_obj = self.unit_obj.hub_obj
 
         if not self.is_direct_hub():
             if self.hub is not None:
-                try:
-                    self.hub_obj = self.printer.lookup_object("AFC_hub {}".format(self.hub))
-                except:
-                    error_string = 'Error: No config found for hub: {hub} in [AFC_stepper {stepper}]. Please make sure [AFC_hub {hub}] section exists in your config'.format(
-                    hub=self.hub, stepper=self.name )
-                    raise error(error_string)
+                self._get_hub_object()
             # Removing for now as this is probably not the best idea to default to a random hub
             # elif self.hub_obj is None:
             #     # Check to make sure at least 1 hub exists in config, if not error out with message
@@ -443,12 +532,7 @@ class AFCLane:
 
         self.extruder_obj = self.unit_obj.extruder_obj
         if self.extruder_name is not None:
-            try:
-                self.extruder_obj = self.printer.lookup_object('AFC_extruder {}'.format(self.extruder_name))
-            except:
-                error_string = 'Error: No config found for extruder: {extruder} in [AFC_stepper {stepper}]. Please make sure [AFC_extruder {extruder}] section exists in your config'.format(
-                    extruder=self.extruder_name, stepper=self.name )
-                raise error(error_string)
+            self._get_extruder_object()
         elif self.extruder_obj is None:
             error_string = "Error: Extruder has not been configured for stepper {name}, please add extruder variable to either [AFC_stepper {name}] or [AFC_{unit_type} {unit_name}] in your config file".format(
                         name=self.name, unit_type=self.unit_obj.type.replace("_", ""), unit_name=self.unit_obj.name)
@@ -463,12 +547,7 @@ class AFCLane:
         # Use buffer defined in stepper and override buffers that maybe set at the UNIT or extruder levels
         self.buffer_obj = self.unit_obj.buffer_obj
         if self.buffer_name is not None:
-            try:
-                self.buffer_obj = self.printer.lookup_object("AFC_buffer {}".format(self.buffer_name))
-            except:
-                error_string = 'Error: No config found for buffer: {buffer} in [AFC_stepper {stepper}]. Please make sure [AFC_buffer {buffer}] section exists in your config'.format(
-                    buffer=self.buffer_name, stepper=self.name )
-                raise error(error_string)
+            self._get_buffer_object()
 
         # Checking if buffer was defined in extruder if not defined in unit/stepper
         elif (self.buffer_obj is None
@@ -524,6 +603,8 @@ class AFCLane:
         self.dist_hub_move_speed = self.long_moves_speed if self.dist_hub >= 200 else self.short_moves_speed
         self.dist_hub_move_accel = self.long_moves_accel if self.dist_hub >= 200 else self.short_moves_accel
 
+        self.logger.info(f"{self.name} {self.dist_hub} {self.dist_hub_move_speed} {self.dist_hub_move_accel}")
+
         # Register macros
         # TODO: add check so that HTLF stepper lanes do not get registered here
         self.afc.gcode.register_mux_command('SET_LONG_MOVE_SPEED',    "LANE", self.name, self.cmd_SET_LONG_MOVE_SPEED, desc=self.cmd_SET_LONG_MOVE_SPEED_help)
@@ -554,13 +635,13 @@ class AFCLane:
 
             if getattr(self.unit_obj, "drive_stepper_obj", None):
                 self.drive_stepper = self.unit_obj.drive_stepper_obj
-                if self.load_endstop:
-                    self.load_endstop.add_stepper(self.drive_stepper.extruder_stepper.stepper)
-                    self.drive_stepper._endstops[self.load_endstop_name] = (self.load_endstop, self.load_endstop_name)
 
-                if self.prep_endstop:
-                    self.prep_endstop.add_stepper(self.drive_stepper.extruder_stepper.stepper)
-                    self.drive_stepper._endstops[self.prep_endstop_name] = (self.prep_endstop, self.prep_endstop_name)
+                for es in self.endstops.values():
+                    if AFCHomingPoints.SELECTOR in es["endstop_name"]:
+                        continue
+                    es["endstop"].add_stepper(self.drive_stepper.extruder_stepper.stepper)
+                    self.drive_stepper._endstops[es["endstop_name"]] = (es["endstop"],
+                                                                        es["endstop_name"])
 
         except Exception as e:
             self.logger.info(f"Couldn't find unit for {self.name} {e}")
@@ -573,8 +654,10 @@ class AFCLane:
             if (self.selector
                 and getattr(self.unit_obj, "selector_stepper_obj", None)):
                 selector_stepper = self.unit_obj.selector_stepper_obj
-                self.selector_endstop.add_stepper(selector_stepper.extruder_stepper.stepper)
-                selector_stepper._endstops[self.selector_endstop_name] = (self.selector_endstop, self.selector_endstop_name)
+                selector_endstop = self.endstops.get(AFCHomingPoints.SELECTOR)
+                selector_endstop["endstop"].add_stepper(selector_stepper.extruder_stepper.stepper)
+                selector_stepper._endstops[self.selector_endstop_name] = (selector_endstop["endstop"],
+                                                                          selector_endstop["endstop_name"])
 
 
 
@@ -724,7 +807,8 @@ class AFCLane:
                 if distance < 0:
                     new_distance = distance - self.homing_overshoot
                 self.unit_obj.select_lane(self)
-                homed, mov_dis = home_to(endstop, new_distance, speed_mode,
+                speed, accel = self.get_speed_accel(speed_mode)
+                homed, mov_dis = home_to(endstop, new_distance, speed, accel,
                         distance > 0, assist_active=self.get_active_assist(distance, assist_active))
                 if (abs(distance) - mov_dis) > self.homing_delta:
                     warn = True
@@ -958,21 +1042,21 @@ class AFCLane:
                     self.unit_obj.prep_post_load(self)
 
                     self.do_enable(False)
-                    if (self.td1_device_id
-                        and self.load_state
+                    if (self.load_state
                         and self.prep_state):
                         self.set_loaded()
                         self._post_prep_user_macro()
                         # Check if user wants to get TD-1 data when loading
                         # TODO: When implementing multi-extruder this could still happen if a lane is loaded for a
                         # different extruder/hub
-                        self._prep_capture_td1()
+                        if self.td1_device_id:
+                            self._prep_capture_td1()
 
-                    elif self.prep_state == True and self.load_state == True and not self.afc.function.is_printing():
-                        message = 'Cannot load {} load sensor is triggered.'.format(self.name)
-                        message += '\n    Make sure filament is not stuck in load sensor or check to make sure load sensor is not stuck triggered.'
-                        message += '\n    Once cleared try loading again'
-                        self.afc.error.AFC_error(message, pause=False)
+                elif self.prep_state == True and self.load_state == True and not self.afc.function.is_printing():
+                    message = 'Cannot load {} load sensor is triggered.'.format(self.name)
+                    message += '\n    Make sure filament is not stuck in load sensor or check to make sure load sensor is not stuck triggered.'
+                    message += '\n    Once cleared try loading again'
+                    self.afc.error.AFC_error(message, pause=False)
         self.prep_active = False
         self.afc.save_vars()
 
@@ -1270,17 +1354,17 @@ class AFCLane:
         else:
             return self.extruder_obj.tool_start_state
 
-    def get_toolhead_endstop(self) -> AFCHomingPoints:
+    def get_toolhead_endstop(self) -> str:
         """
         Helper method to lookup endstop type based on users config.
 
-        :return AFCHomingPoints: Returns `AFCHomingPoints.BUFFER` if users tool_start is set to buffer
-            else returns `AFCHomingPoints.TOOL`
+        :return AFCHomingPoints: Returns buffer endstop name if users tool_start is set to buffer
+            else returns tool start endstop name
         """
         if self.extruder_obj.tool_start == "buffer":
-            return AFCHomingPoints.BUFFER
+            return self.buffer_endstop_name
         else:
-            return AFCHomingPoints.TOOL
+            return self.tool_endstop_name
 
     def get_trailing(self):
         """
@@ -1520,7 +1604,7 @@ class AFCLane:
             self.unit_obj.move_to_hub(self, self.hub_obj.td1_bowden_length,
                                       MoveDirection.NEG,
                                       self.afc.homing_enabled,
-                                      speedMode=SpeedMode.LONG)
+                                      speed_mode=SpeedMode.LONG)
             if success:
                 self.send_lane_data()
 

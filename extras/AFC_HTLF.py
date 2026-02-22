@@ -219,9 +219,9 @@ class AFC_HTLF(afcBoxTurtle):
                 self.logger.debug("HTLF: {} Homing to endstop.".format(self.name))
                 if self.return_to_home( disable_selector=False ):
                     self.selector_stepper_obj.move(self.calculate_lobe_movement( lane.index ),
-                                                    self.selector_movement_speed,
-                                                    self.selector_movement_accel,
-                                                    False)
+                                                   self.selector_movement_speed,
+                                                   self.selector_movement_accel,
+                                                   False)
                     self.logger.debug("HTLF: Selecting {}".format(lane))
                     self.current_selected_lane = lane
                     return True, self._homed_distance

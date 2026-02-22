@@ -14,8 +14,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from extras.AFC_lane import (
-        afc, AFCLane, AssistActive,
-        AFCHomingPoints, MoveDirection
+        afc, AFCLane, AssistActive, MoveDirection
     )
     from extras.AFC_stepper import AFCExtruderStepper
     from extras.AFC_buffer import AFCTrigger
@@ -33,7 +32,7 @@ except:
 try: from extras.AFC_respond import AFCprompt
 except: raise config_error(ERROR_STR.format(import_lib="AFC_respond", trace=traceback.format_exc()))
 
-try: from extras.AFC_lane import SpeedMode, AssistActive, AFCHomingPoints
+try: from extras.AFC_lane import SpeedMode, AssistActive
 except:
     err_str = ERROR_STR.format(import_lib="AFC_lane", trace=traceback.format_exc())
     raise config_error(err_str)
@@ -723,7 +722,7 @@ class afcUnit:
 
     def move_to_hub(self, lane: AFCLane, dist: float,
                     dir:MoveDirection, use_homing=True,
-                    speedMode=SpeedMode.HUB,
+                    speed_mode=SpeedMode.HUB,
                     assist_active=AssistActive.DYNAMIC) -> tuple[bool, float|int, bool]:
         """
         Helper method to move filament to hub sensor, calls lanes move_to method with HUB as trigger
@@ -743,11 +742,12 @@ class afcUnit:
                 movement moved is not within 300mm of total distance. When homing is
                 disabled, always returns True, 0, False.
         """
-        return lane.move_to(dist * dir, speedMode, assist_active=assist_active,
-                            endstop=AFCHomingPoints.HUB, use_homing=use_homing)
+        return lane.move_to(dist * dir, speed_mode, assist_active=assist_active,
+                            endstop=lane.hub_endstop_name, use_homing=use_homing)
 
     def move_to_load(self, lane: AFCLane, dist: float,
-                     dir: MoveDirection, use_homing=True) -> tuple[bool, float|int, bool]:
+                     dir: MoveDirection, use_homing=True,
+                     speed_mode=SpeedMode.LONG) -> tuple[bool, float|int, bool]:
         """
         Helper method to move filament to load sensor, calls lane's move_to method with the load
         sensor endpoint (lane.load_es) as trigger point when homing is enabled.
@@ -761,12 +761,13 @@ class afcUnit:
         :param dist: Distance in mm to move filament
         :param dir: Direction(+/-) to move filament
         :param use_homing: When enabled home_to logic is used, else move_advance logic is used
+        :param speedMode: SpeedMode type to use when moving stepper
 
         :return tuple: Returns if move was successful, distance moved, and boolean set to true if
                        movement moved is not within 300mm of total distance. When homing is
                        disabled, always returns True, 0, False.
         """
-        return lane.move_to(dist * dir, SpeedMode.LONG, endstop=lane.load_es,
+        return lane.move_to(dist * dir, speed_mode, endstop=lane.load_es,
                             assist_active=AssistActive.DYNAMIC, use_homing=use_homing)
 
     cmd_AFC_SELECT_LANE_help = "Command to home to lane selector for specified lane in selector style units."

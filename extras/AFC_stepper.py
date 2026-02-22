@@ -19,7 +19,7 @@ except:
     raise_string = "Error when trying to import AFC_utils.ERROR_STR\n{trace}".format(trace=traceback.format_exc())
     raise error(raise_string)
 
-try: from extras.AFC_lane import AFCLane, SpeedMode, AFCHomingPoints
+try: from extras.AFC_lane import AFCLane, AFCHomingPoints
 except: raise error(ERROR_STR.format(import_lib="AFC_lane", trace=traceback.format_exc()))
 
 if TYPE_CHECKING:
@@ -669,7 +669,7 @@ class AFCExtruderStepper(AFCLane):
             raise self.gcode.error(str(e))
 
     # ------------------ Convenience homing helpers ------------------
-    def home_to(self, endstop_spec:AFCHomingPoints, distance:Optional[float], speed_mode: SpeedMode,
+    def home_to(self, endstop_spec:AFCHomingPoints, distance:Optional[float], speed, accel,
                 triggered=True, check_trigger=True, assist_active=True) -> tuple[bool, float]:
         """
         Home towards an endstop relative to current position by distance (mm).
@@ -689,7 +689,6 @@ class AFCExtruderStepper(AFCLane):
                        weather homing was successful or not. When not successful distance
                        will equal max move distance.
         """
-        speed, accel = self.get_speed_accel(speed_mode)
 
         if distance is None:
             raise self.gcode.error("home_to requires an explicit distance; use home_to_hub/toolhead/buffer for sensible defaults")
