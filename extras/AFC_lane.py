@@ -289,8 +289,12 @@ class AFCLane:
                                            self.cmd_SET_LANE_LOADED, self.cmd_SET_LANE_LOADED_help,
                                            self.cmd_SET_LANE_LOAD_options )
 
-        self._get_steppers(config)
+        if "AFC_stepper" in self.fullname:
+            self.printer.register_event_handler("klippy:mcu_identify", self._handle_mcu_identify)
+            return
 
+        # Should only get this far for AFC_lane configs
+        self._get_steppers(config)
         if (hasattr(self, "unit_obj")
             and getattr(self.unit_obj, "selector_stepper_obj", None)):
             # Register macro for units that have selectors
@@ -378,6 +382,12 @@ class AFCLane:
             if v[0] in value:
                 self.filament_density = float(v[1])
                 break
+
+    def _handle_mcu_identify(self):
+        """
+        Handles klippy:mcu_identify callback to register endstops for steppers
+        """
+        self._get_steppers(self._config)
 
     def _handle_ready(self):
         """
@@ -603,8 +613,6 @@ class AFCLane:
         self.dist_hub_move_speed = self.long_moves_speed if self.dist_hub >= 200 else self.short_moves_speed
         self.dist_hub_move_accel = self.long_moves_accel if self.dist_hub >= 200 else self.short_moves_accel
 
-        self.logger.info(f"{self.name} {self.dist_hub} {self.dist_hub_move_speed} {self.dist_hub_move_accel}")
-
         # Register macros
         # TODO: add check so that HTLF stepper lanes do not get registered here
         self.afc.gcode.register_mux_command('SET_LONG_MOVE_SPEED',    "LANE", self.name, self.cmd_SET_LONG_MOVE_SPEED, desc=self.cmd_SET_LONG_MOVE_SPEED_help)
@@ -625,23 +633,24 @@ class AFCLane:
         """
         Helper function to get steppers for lane and setup for proper homing
         """
-        if config.get("step_pin", None):
-            return
         try:
-            self.only_lane = True
             unit_cfg = next(config.getsection(s) for s in config.fileconfig.sections() if self.unit in s and "AFC" in s)
-            self.logger.info(f"{unit_cfg.get_name()} drive stepper {self.name}")
             self.unit_obj: afcUnit = self.printer.load_object(config, unit_cfg.get_name())
 
-            if getattr(self.unit_obj, "drive_stepper_obj", None):
-                self.drive_stepper = self.unit_obj.drive_stepper_obj
+            drive_stepper = self
+            if not config.get("step_pin", None):
+                self.only_lane = True
+                if getattr(self.unit_obj, "drive_stepper_obj", None):
+                    self.drive_stepper = self.unit_obj.drive_stepper_obj
+                    drive_stepper = self.drive_stepper
 
+            if drive_stepper:
                 for es in self.endstops.values():
                     if AFCHomingPoints.SELECTOR in es["endstop_name"]:
                         continue
-                    es["endstop"].add_stepper(self.drive_stepper.extruder_stepper.stepper)
-                    self.drive_stepper._endstops[es["endstop_name"]] = (es["endstop"],
-                                                                        es["endstop_name"])
+                    es["endstop"].add_stepper(drive_stepper.extruder_stepper.stepper)
+                    drive_stepper._endstops[es["endstop_name"]] = (es["endstop"],
+                                                                   es["endstop_name"])
 
         except Exception as e:
             self.logger.info(f"Couldn't find unit for {self.name} {e}")
