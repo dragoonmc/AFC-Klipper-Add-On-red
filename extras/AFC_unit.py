@@ -921,6 +921,6 @@ class afcUnit:
         move_dist: float = gcmd.get_float("MOVE_DIST", 100.0)
         force = force != 0
         any_selected = any(True if lane._selector_state else False for lane in self.lanes.values())
-        if any_selected or force == 1:
+        if any_selected or force:
             self.unselect_lane(move_distance=move_dist)
             self.logger.info(f"{self.name} selector moved")

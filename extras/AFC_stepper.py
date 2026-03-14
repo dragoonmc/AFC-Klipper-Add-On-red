@@ -586,7 +586,8 @@ class AFCExtruderStepper(AFCLane):
         Perform's a homing move using the specified endstop, speed/accel and distance.
 
         :param movepos: target absolute position along the filament axis
-        :param speed/accel: motion params (fallbacks applied if None)
+        :param speed: The speed of the movement.
+        :param accel: The acceleration of the movement.
         :param endstop_spec: 'load' | raw pin string
         :param triggered/check_trigger: same semantics as manual_stepper
         :param assist_active: When true espoolers(if configured) activate during homing move
@@ -681,7 +682,7 @@ class AFCExtruderStepper(AFCLane):
 
     # ------------------ Convenience homing helpers ------------------
     def home_to(self, endstop_spec:AFCHomingPoints, distance:Optional[float], speed: float, accel: float,
-                triggered=True, check_trigger=True, assist_active=True) -> tuple[bool, float]:
+                triggered=True, check_trigger=True, assist_active=True) -> tuple[bool, float, bool]:
         """
         Home towards an endstop relative to current position by distance (mm).
         If 'distance' is None, callers should prefer the typed helpers which pick a
@@ -698,10 +699,11 @@ class AFCExtruderStepper(AFCLane):
         :param triggered: If True, movement stops when the endstop triggers. Defaults to True.
         :param check_trigger: If True, verify that the endstop is actually triggered at the
                               end of the move. Defaults to True.
-        :return tuple: bool: indicated if homing was successful or not.
-                       float: indicated movement wheather homing was successful or not. When not
-                         successful distance will equal max move distance.
-                       bool: indicate if an error happened while homing
+        :return :return tuple: 3-tuple consisting of:
+                        bool: indicated if homing was successful or not.
+                        float: indicated movement wheather homing was successful or not. When not
+                               successful distance will equal max move distance.
+                        bool: indicate if an error happened while homing
         """
         error = False
 
